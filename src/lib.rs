@@ -4,7 +4,7 @@
 //! the beacon chain. The hash function changed during the specification process, so defining it
 //! once in this crate made it easy to replace.
 //!
-//! Now this crate serves primarily as a wrapper over two SHA256 crates: `sha2` and `ring` – which
+//! Now this crate serves primarily as a wrapper over two SHA256 crates: `sha2` and `aws-lc-rs` – which
 //! it switches between at runtime based on the availability of SHA intrinsics.
 
 mod sha2_impl;
@@ -49,7 +49,7 @@ pub trait Sha256Context {
     fn finalize(self) -> [u8; HASH_LEN];
 }
 
-/// Top-level trait implemented by both `sha2` and `ring` implementations.
+/// Top-level trait implemented by both `sha2` and `aws-lc-rs` implementations.
 pub trait Sha256 {
     type Context: Sha256Context;
 
@@ -58,12 +58,12 @@ pub trait Sha256 {
     fn hash_fixed(&self, input: &[u8]) -> [u8; HASH_LEN];
 }
 
-/// Implementation of SHA256 using the `ring` crate (fastest on CPUs without SHA extensions).
-pub struct RingImpl;
+/// Implementation of SHA256 using the `aws-lc-rs` crate (fastest on CPUs without SHA extensions).
+pub struct AwsLcImpl;
 
-impl Sha256Context for ring::digest::Context {
+impl Sha256Context for aws_lc_rs::digest::Context {
     fn new() -> Self {
-        Self::new(&ring::digest::SHA256)
+        Self::new(&aws_lc_rs::digest::SHA256)
     }
 
     fn update(&mut self, bytes: &[u8]) {
@@ -77,17 +77,17 @@ impl Sha256Context for ring::digest::Context {
     }
 }
 
-impl Sha256 for RingImpl {
-    type Context = ring::digest::Context;
+impl Sha256 for AwsLcImpl {
+    type Context = aws_lc_rs::digest::Context;
 
     fn hash(&self, input: &[u8]) -> Vec<u8> {
-        ring::digest::digest(&ring::digest::SHA256, input)
+        aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, input)
             .as_ref()
             .into()
     }
 
     fn hash_fixed(&self, input: &[u8]) -> [u8; HASH_LEN] {
-        let mut ctxt = Self::Context::new(&ring::digest::SHA256);
+        let mut ctxt = Self::Context::new(&aws_lc_rs::digest::SHA256);
         ctxt.update(input);
         ctxt.finalize()
     }
@@ -97,7 +97,7 @@ impl Sha256 for RingImpl {
 pub enum DynamicImpl {
     #[cfg(target_arch = "x86_64")]
     Sha2,
-    Ring,
+    AwsLc,
 }
 
 // Runtime latch for detecting the availability of SHA extensions on x86_64.
@@ -123,11 +123,11 @@ impl DynamicImpl {
         if have_sha_extensions() {
             Self::Sha2
         } else {
-            Self::Ring
+            Self::AwsLc
         }
 
         #[cfg(not(target_arch = "x86_64"))]
-        Self::Ring
+        Self::AwsLc
     }
 }
 
@@ -139,7 +139,7 @@ impl Sha256 for DynamicImpl {
         match self {
             #[cfg(target_arch = "x86_64")]
             Self::Sha2 => Sha2CrateImpl.hash(input),
-            Self::Ring => RingImpl.hash(input),
+            Self::AwsLc => AwsLcImpl.hash(input),
         }
     }
 
@@ -148,7 +148,7 @@ impl Sha256 for DynamicImpl {
         match self {
             #[cfg(target_arch = "x86_64")]
             Self::Sha2 => Sha2CrateImpl.hash_fixed(input),
-            Self::Ring => RingImpl.hash_fixed(input),
+            Self::AwsLc => AwsLcImpl.hash_fixed(input),
         }
     }
 }
@@ -159,7 +159,7 @@ impl Sha256 for DynamicImpl {
 pub enum DynamicContext {
     #[cfg(target_arch = "x86_64")]
     Sha2(sha2::Sha256),
-    Ring(ring::digest::Context),
+    AwsLc(aws_lc_rs::digest::Context),
 }
 
 impl Sha256Context for DynamicContext {
@@ -167,7 +167,7 @@ impl Sha256Context for DynamicContext {
         match DynamicImpl::best() {
             #[cfg(target_arch = "x86_64")]
             DynamicImpl::Sha2 => Self::Sha2(Sha256Context::new()),
-            DynamicImpl::Ring => Self::Ring(Sha256Context::new()),
+            DynamicImpl::AwsLc => Self::AwsLc(Sha256Context::new()),
         }
     }
 
@@ -175,7 +175,7 @@ impl Sha256Context for DynamicContext {
         match self {
             #[cfg(target_arch = "x86_64")]
             Self::Sha2(ctxt) => Sha256Context::update(ctxt, bytes),
-            Self::Ring(ctxt) => Sha256Context::update(ctxt, bytes),
+            Self::AwsLc(ctxt) => Sha256Context::update(ctxt, bytes),
         }
     }
 
@@ -183,7 +183,7 @@ impl Sha256Context for DynamicContext {
         match self {
             #[cfg(target_arch = "x86_64")]
             Self::Sha2(ctxt) => Sha256Context::finalize(ctxt),
-            Self::Ring(ctxt) => Sha256Context::finalize(ctxt),
+            Self::AwsLc(ctxt) => Sha256Context::finalize(ctxt),
         }
     }
 }

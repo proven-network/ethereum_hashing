@@ -12,7 +12,7 @@ categories = ["cryptography::cryptocurrencies"]
 rust-version = "1.80.0"
 
 [dependencies]
-ring = "0.17"
+aws-lc-rs = "1.12.6"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 cpufeatures = "0.2"
